@@ -1,0 +1,63 @@
+# Backend Framework
+fastapi>=0.95.0
+uvicorn>=0.21.1
+pydantic>=2.0.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.10.2
+psycopg2-binary>=2.9.5  # For PostgreSQL support (optional)
+pymongo==4.4.1
+redis==4.6.0
+
+# Data Processing
+numpy>=1.24.2
+pandas>=2.0.0
+scikit-learn>=1.2.2
+scipy==1.10.1
+pillow>=9.5.0  # For image processing
+nltk>=3.8.1  # For text processing
+spacy>=3.5.2  # For NLP
+transformers>=4.27.4  # For advanced NLP
+librosa>=0.10.0  # For audio processing
+pydub==0.25.1
+opencv-python>=4.7.0  # For video processing and computer vision
+
+# Machine Learning
+xgboost==1.7.5
+pytorch==2.0.1
+torchvision==0.15.2
+tensorflow==2.12.0
+
+# Concurrency
+asyncio>=3.4.3
+aiohttp>=3.8.4
+
+# Visualization (for frontend and reports)
+matplotlib>=3.7.1
+seaborn>=0.12.2
+plotly>=5.14.1
+
+# Testing
+pytest>=7.3.1
+pytest-asyncio>=0.21.0
+httpx>=0.24.0  # For async HTTP requests in tests
+
+# Utilities
+python-dotenv>=1.0.0  # For environment variable management
+pyyaml==6.0.1
+tqdm>=4.65.0  # For progress bars
+loguru>=0.7.0  # Enhanced logging
+requests>=2.28.2  # For HTTP requests
+
+# Documentation
+mkdocs>=1.4.3
+mkdocs-material>=9.1.5
+mkdocstrings>=0.21.2
+sphinx==7.1.0
+sphinx-rtd-theme==1.2.2
+
+# API Integrations
+google-api-python-client>=2.79.0  # For YouTube API
+praw>=7.7.0  # For Reddit API
+isodate>=0.6.1  # For ISO duration parsing 

@@ -1,0 +1,116 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "rules/alert_rules.yml"
+
+scrape_configs:
+  # Backend API monitoring
+  - job_name: "backend-api"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["backend:8000"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Worker monitoring
+  - job_name: "workers"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["worker:8001"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Scheduler monitoring
+  - job_name: "scheduler"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["scheduler:8002"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Database monitoring
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Redis monitoring
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Node exporter for host metrics
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Cadvisor for container metrics
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+
+  # Agent monitoring
+  - job_name: "agents"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets:
+          - "video-agent:8010"
+          - "audio-agent:8011"
+          - "text-agent:8012"
+          - "engagement-agent:8013"
+          - "hitl-agent:8014"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: "([^:]+).*"
+        replacement: "${1}"
+      - source_labels: [__address__]
+        target_label: agent_type
+        regex: "([^-]+)-agent.*"
+        replacement: "${1}" 

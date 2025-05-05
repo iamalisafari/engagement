@@ -1,0 +1,244 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install -r backend/requirements-dev.txt
+    
+    - name: Run linting
+      run: |
+        flake8 backend
+        black --check backend
+        isort --check-only --profile black backend
+    
+    - name: Run backend tests
+      env:
+        TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test_secret_key
+      run: |
+        cd backend
+        pytest --cov=. --cov-report=xml
+    
+    - name: Upload coverage report
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run frontend linting
+      run: |
+        cd frontend
+        npm run lint
+    
+    - name: Run frontend tests
+      run: |
+        cd frontend
+        npm test -- --coverage
+  
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: yourusername/social-media-engagement-analysis
+        tags: |
+          type=ref,event=branch
+          type=sha,format=short
+    
+    - name: Build and push backend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-backend
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=registry,ref=yourusername/social-media-engagement-analysis:buildcache-backend
+        cache-to: type=registry,ref=yourusername/social-media-engagement-analysis:buildcache-backend,mode=max
+    
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./frontend
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-frontend
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=registry,ref=yourusername/social-media-engagement-analysis:buildcache-frontend
+        cache-to: type=registry,ref=yourusername/social-media-engagement-analysis:buildcache-frontend,mode=max
+  
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.25.0'
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Update kube config
+      run: aws eks update-kubeconfig --name staging-cluster --region us-west-2
+    
+    - name: Deploy to staging
+      run: |
+        # Update image tag in Kubernetes manifests
+        TAG=$(echo $GITHUB_SHA | head -c7)
+        sed -i "s|image: yourusername/social-media-engagement-analysis:.*-backend|image: yourusername/social-media-engagement-analysis:sha-$TAG-backend|g" kubernetes/staging/*.yaml
+        sed -i "s|image: yourusername/social-media-engagement-analysis:.*-frontend|image: yourusername/social-media-engagement-analysis:sha-$TAG-frontend|g" kubernetes/staging/*.yaml
+        
+        # Apply Kubernetes manifests
+        kubectl apply -f kubernetes/staging/
+        
+        # Verify deployment
+        kubectl rollout status deployment/backend-deployment -n staging
+        kubectl rollout status deployment/frontend-deployment -n staging
+    
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be fully available
+        sleep 30
+        
+        # Get ingress URL
+        STAGING_URL=$(kubectl get ingress frontend-ingress -n staging -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+        
+        # Run basic health check
+        curl -f https://$STAGING_URL/api/health
+  
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://social-media-analysis.example.com
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.25.0'
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Update kube config
+      run: aws eks update-kubeconfig --name production-cluster --region us-west-2
+    
+    - name: Deploy to production
+      run: |
+        # Update image tag in Kubernetes manifests
+        TAG=$(echo $GITHUB_SHA | head -c7)
+        sed -i "s|image: yourusername/social-media-engagement-analysis:.*-backend|image: yourusername/social-media-engagement-analysis:sha-$TAG-backend|g" kubernetes/production/*.yaml
+        sed -i "s|image: yourusername/social-media-engagement-analysis:.*-frontend|image: yourusername/social-media-engagement-analysis:sha-$TAG-frontend|g" kubernetes/production/*.yaml
+        
+        # Apply Kubernetes manifests
+        kubectl apply -f kubernetes/production/
+        
+        # Verify deployment
+        kubectl rollout status deployment/backend-deployment -n production
+        kubectl rollout status deployment/frontend-deployment -n production
+    
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be fully available
+        sleep 30
+        
+        # Get ingress URL
+        PROD_URL=$(kubectl get ingress frontend-ingress -n production -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+        
+        # Run basic health check
+        curl -f https://$PROD_URL/api/health
+        
+        # Run additional validation tests
+        curl -f https://$PROD_URL/api/status | jq -e '.status == "operational"' 
